@@ -62,6 +62,8 @@ impl Filters {
 
 pub struct HeliusWebsocket {
     pub api_key: String,
+    pub ping_interval_secs: Option<u64>,
+    pub pong_timeout_secs: Option<u64>,
     pub filters: Filters,
     pub account_deletions_tracked: Arc<RwLock<HashSet<Pubkey>>>,
     pub cluster: Cluster,
@@ -70,12 +72,16 @@ pub struct HeliusWebsocket {
 impl HeliusWebsocket {
     pub fn new(
         api_key: String,
+        ping_interval_secs: Option<u64>,
+        pong_timeout_secs: Option<u64>,
         filters: Filters,
         account_deletions_tracked: Arc<RwLock<HashSet<Pubkey>>>,
         cluster: Cluster,
     ) -> Self {
         Self {
             api_key,
+            ping_interval_secs,
+            pong_timeout_secs,
             filters,
             account_deletions_tracked,
             cluster,
@@ -125,7 +131,13 @@ impl Datasource for HeliusWebsocket {
                 self.api_key
             );
 
-            let ws = match EnhancedWebsocket::new(&ws_url, None, None).await {
+            let ws = match EnhancedWebsocket::new(
+                &ws_url,
+                self.ping_interval_secs,
+                self.pong_timeout_secs,
+            )
+            .await
+            {
                 Ok(ws) => ws,
                 Err(err) => {
                     log::error!("Failed to create Enhanced Helius Websocket: {}", err);
