@@ -109,19 +109,13 @@ impl Datasource for HeliusWebsocket {
                 break;
             }
 
-            let mut helius = match Helius::new_with_ws(&self.api_key, self.cluster.clone()).await {
+            let mut helius = match Helius::new(&self.api_key, self.cluster.clone()) {
                 Ok(client) => client,
                 Err(err) => {
-                    log::error!("Failed to create Helius client: {}", err);
-                    reconnection_attempts += 1;
-                    if reconnection_attempts >= MAX_RECONNECTION_ATTEMPTS {
-                        return Err(carbon_core::error::Error::Custom(format!(
-                            "Failed to create Helius client after {} attempts: {}",
-                            MAX_RECONNECTION_ATTEMPTS, err
-                        )));
-                    }
-                    tokio::time::sleep(Duration::from_millis(RECONNECTION_DELAY_MS)).await;
-                    continue;
+                    return Err(carbon_core::error::Error::Custom(format!(
+                        "Failed to create Helius client {}",
+                        err
+                    )));
                 }
             };
 
