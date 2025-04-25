@@ -10,7 +10,6 @@ use {
     futures::StreamExt,
     helius::{
         types::{Cluster, RpcTransactionsConfig},
-        websocket::EnhancedWebsocket,
         Helius,
     },
     solana_sdk::{
@@ -32,8 +31,6 @@ use {
     tokio_util::sync::CancellationToken,
 };
 
-const DEVNET_WS_URL: &str = "wss://atlas-devnet.helius-rpc.com/";
-const MAINNET_WS_URL: &str = "wss://atlas-mainnet.helius-rpc.com/";
 const MAX_MISSED_BLOCKS: u64 = 10;
 const MAX_RECONNECTION_ATTEMPTS: u32 = 30;
 const RECONNECTION_DELAY_MS: u64 = 3000;
@@ -64,6 +61,7 @@ pub struct HeliusWebsocket {
     pub api_key: String,
     pub ping_interval_secs: Option<u64>,
     pub pong_timeout_secs: Option<u64>,
+    pub transaction_timeout_secs: Option<u64>,
     pub filters: Filters,
     pub account_deletions_tracked: Arc<RwLock<HashSet<Pubkey>>>,
     pub cluster: Cluster,
@@ -74,6 +72,7 @@ impl HeliusWebsocket {
         api_key: String,
         ping_interval_secs: Option<u64>,
         pong_timeout_secs: Option<u64>,
+        transaction_timeout_secs: Option<u64>,
         filters: Filters,
         account_deletions_tracked: Arc<RwLock<HashSet<Pubkey>>>,
         cluster: Cluster,
@@ -85,16 +84,11 @@ impl HeliusWebsocket {
             filters,
             account_deletions_tracked,
             cluster,
-        }
-    }
-
-    fn get_ws_url(cluster: &Cluster) -> &'static str {
-        match cluster {
-            Cluster::MainnetBeta => MAINNET_WS_URL,
-            _ => DEVNET_WS_URL,
+            transaction_timeout_secs,
         }
     }
 }
+
 #[async_trait]
 impl Datasource for HeliusWebsocket {
     async fn consume(
@@ -115,30 +109,15 @@ impl Datasource for HeliusWebsocket {
                 break;
             }
 
-            let mut helius = match Helius::new(&self.api_key, self.cluster.clone()) {
-                Ok(client) => client,
-                Err(err) => {
-                    return Err(carbon_core::error::Error::Custom(format!(
-                        "Failed to create Helius client {}",
-                        err
-                    )));
-                }
-            };
-
-            let ws_url = format!(
-                "{}/?api-key={}",
-                Self::get_ws_url(&self.cluster),
-                self.api_key
-            );
-
-            let ws = match EnhancedWebsocket::new(
-                &ws_url,
+            let helius = match Helius::new_with_ws_with_timeouts(
+                &self.api_key,
+                self.cluster.clone(),
                 self.ping_interval_secs,
                 self.pong_timeout_secs,
             )
             .await
             {
-                Ok(ws) => ws,
+                Ok(client) => client,
                 Err(err) => {
                     log::error!("Failed to create Enhanced Helius Websocket: {}", err);
                     reconnection_attempts += 1;
@@ -153,8 +132,7 @@ impl Datasource for HeliusWebsocket {
                 }
             };
 
-            helius.ws_client = Some(Arc::new(ws));
-
+            let transaction_timeout_secs = self.transaction_timeout_secs;
             let account_deletions_tracked = Arc::clone(&self.account_deletions_tracked);
             let filters = self.filters.clone();
             let sender = sender.clone();
@@ -388,6 +366,8 @@ impl Datasource for HeliusWebsocket {
                                 }
                             };
 
+                        let mut last_transaction_time = Instant::now();
+
                         loop {
                             tokio::select! {
                                 _ = cancellation_token_tx.cancelled() => {
@@ -398,10 +378,20 @@ impl Datasource for HeliusWebsocket {
                                     log::info!("Iteration cancelled for transaction subscription");
                                     return;
                                 }
+                                _ = tokio::time::sleep(Duration::from_secs(5)) => {
+                                    if let Some(timeout_secs) = transaction_timeout_secs {
+                                        if last_transaction_time.elapsed() > Duration::from_secs(timeout_secs) {
+                                            log::error!("No new transactions received in the last {} seconds, triggering reconnection", timeout_secs);
+                                            iteration_cancellation_tx.cancel();
+                                        }
+                                    }
+                                    return;
+                                }
                                 event_result = stream.next() => {
                                     match event_result {
                                         Some(tx_event) => {
                                             let start_time = std::time::Instant::now();
+                                            last_transaction_time = Instant::now();
                                             let encoded_transaction_with_status_meta = tx_event.transaction;
                                             let signature_str = tx_event.signature;
                                             let Ok(signature) = Signature::from_str(&signature_str) else {
