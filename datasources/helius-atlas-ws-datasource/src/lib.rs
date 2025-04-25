@@ -61,7 +61,7 @@ pub struct HeliusWebsocket {
     pub api_key: String,
     pub ping_interval_secs: Option<u64>,
     pub pong_timeout_secs: Option<u64>,
-    pub transaction_timeout_secs: Option<u64>,
+    pub transaction_idle_timeout_secs: Option<u64>,
     pub filters: Filters,
     pub account_deletions_tracked: Arc<RwLock<HashSet<Pubkey>>>,
     pub cluster: Cluster,
@@ -72,7 +72,7 @@ impl HeliusWebsocket {
         api_key: String,
         ping_interval_secs: Option<u64>,
         pong_timeout_secs: Option<u64>,
-        transaction_timeout_secs: Option<u64>,
+        transaction_idle_timeout_secs: Option<u64>,
         filters: Filters,
         account_deletions_tracked: Arc<RwLock<HashSet<Pubkey>>>,
         cluster: Cluster,
@@ -81,10 +81,10 @@ impl HeliusWebsocket {
             api_key,
             ping_interval_secs,
             pong_timeout_secs,
+            transaction_idle_timeout_secs,
             filters,
             account_deletions_tracked,
             cluster,
-            transaction_timeout_secs,
         }
     }
 }
@@ -132,7 +132,7 @@ impl Datasource for HeliusWebsocket {
                 }
             };
 
-            let transaction_timeout_secs = self.transaction_timeout_secs;
+            let transaction_idle_timeout_secs = self.transaction_idle_timeout_secs;
             let account_deletions_tracked = Arc::clone(&self.account_deletions_tracked);
             let filters = self.filters.clone();
             let sender = sender.clone();
@@ -379,13 +379,13 @@ impl Datasource for HeliusWebsocket {
                                     return;
                                 }
                                 _ = tokio::time::sleep(Duration::from_secs(5)) => {
-                                    if let Some(timeout_secs) = transaction_timeout_secs {
-                                        if last_transaction_time.elapsed() > Duration::from_secs(timeout_secs) {
-                                            log::error!("No new transactions received in the last {} seconds, triggering reconnection", timeout_secs);
+                                    if let Some(idle_timeout_secs) = transaction_idle_timeout_secs {
+                                        if last_transaction_time.elapsed() > Duration::from_secs(idle_timeout_secs) {
+                                            log::error!("No new transactions received in the last {} seconds, triggering reconnection", idle_timeout_secs);
                                             iteration_cancellation_tx.cancel();
+                                            return;
                                         }
                                     }
-                                    return;
                                 }
                                 event_result = stream.next() => {
                                     match event_result {
