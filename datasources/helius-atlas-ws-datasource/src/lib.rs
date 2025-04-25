@@ -366,7 +366,7 @@ impl Datasource for HeliusWebsocket {
                                 }
                             };
 
-                        let mut last_transaction_time = Instant::now();
+                        let mut last_transaction_update = Instant::now();
 
                         loop {
                             tokio::select! {
@@ -380,7 +380,7 @@ impl Datasource for HeliusWebsocket {
                                 }
                                 _ = tokio::time::sleep(Duration::from_secs(5)) => {
                                     if let Some(idle_timeout_secs) = transaction_idle_timeout_secs {
-                                        if last_transaction_time.elapsed() > Duration::from_secs(idle_timeout_secs) {
+                                        if last_transaction_update.elapsed() > Duration::from_secs(idle_timeout_secs) {
                                             log::error!("No new transactions received in the last {} seconds, triggering reconnection", idle_timeout_secs);
                                             iteration_cancellation_tx.cancel();
                                             return;
@@ -390,8 +390,7 @@ impl Datasource for HeliusWebsocket {
                                 event_result = stream.next() => {
                                     match event_result {
                                         Some(tx_event) => {
-                                            let start_time = std::time::Instant::now();
-                                            last_transaction_time = Instant::now();
+                                            last_transaction_update = Instant::now();
                                             let encoded_transaction_with_status_meta = tx_event.transaction;
                                             let signature_str = tx_event.signature;
                                             let Ok(signature) = Signature::from_str(&signature_str) else {
@@ -583,7 +582,7 @@ impl Datasource for HeliusWebsocket {
                                             metrics
                                                     .record_histogram(
                                                         "helius_atlas_ws_transaction_process_time_nanoseconds",
-                                                        start_time.elapsed().as_nanos() as f64
+                                                        last_transaction_update.elapsed().as_nanos() as f64
                                                     )
                                                     .await
                                                     .unwrap_or_else(|value| log::error!("Error recording metric: {}", value));
@@ -624,7 +623,7 @@ impl Datasource for HeliusWebsocket {
                     break;
                 }
                 _ = iteration_cancellation_clone.cancelled() => {
-
+                    log::warn!("Iteration cancelled");
                 }
                 result = handle => {
                     if let Err(e) = result {
@@ -634,6 +633,7 @@ impl Datasource for HeliusWebsocket {
             }
 
             reconnection_attempts = 0;
+            log::info!("Reconnecting to Helius WebSocket");
             tokio::time::sleep(Duration::from_millis(RECONNECTION_DELAY_MS)).await;
         }
 
