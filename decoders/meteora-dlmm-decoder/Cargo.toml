@@ -1,6 +1,6 @@
 [package]
 name = "carbon-meteora-dlmm-decoder"
-version = "0.6.2"
+version = "0.8.0"
 description = "Meteora DLMM Decoder"
 license = { workspace = true }
 edition = { workspace = true }
@@ -16,4 +16,6 @@ crate-type = ["rlib"]
 carbon-core = { workspace = true }
 serde = { workspace = true }
 serde-big-array = { workspace = true }
-solana-sdk = { workspace = true }
+solana-account = { workspace = true }
+solana-instruction = { workspace = true, default-features = false }
+solana-pubkey = { workspace = true }

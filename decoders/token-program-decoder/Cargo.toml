@@ -1,6 +1,6 @@
 [package]
 name = "carbon-token-program-decoder"
-version = "0.6.2"
+version = "0.8.0"
 description = "Token Program Decoder"
 license = { workspace = true }
 edition = { workspace = true }
@@ -15,5 +15,8 @@ crate-type = ["rlib"]
 [dependencies]
 carbon-core = { workspace = true }
 serde = { workspace = true }
-solana-sdk = { workspace = true }
+solana-account = { workspace = true }
+solana-instruction = { workspace = true, default-features = false }
+solana-program-pack = { workspace = true }
+solana-pubkey = { workspace = true }
 spl-token = { workspace = true }

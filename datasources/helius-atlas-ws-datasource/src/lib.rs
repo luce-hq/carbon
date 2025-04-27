@@ -12,11 +12,12 @@ use {
         types::{Cluster, RpcTransactionsConfig},
         Helius,
     },
-    solana_sdk::{
-        account::Account, bs58, instruction::CompiledInstruction, message::v0::LoadedAddresses,
-        pubkey::Pubkey, signature::Signature, sysvar::clock::Clock,
-        transaction_context::TransactionReturnData,
-    },
+    solana_account::Account,
+    solana_clock::Clock,
+    solana_program::{instruction::CompiledInstruction, message::v0::LoadedAddresses},
+    solana_pubkey::Pubkey,
+    solana_sdk::transaction_context::TransactionReturnData,
+    solana_signature::Signature,
     solana_transaction_status::{
         option_serializer::OptionSerializer, InnerInstruction, InnerInstructions, Reward,
         TransactionStatusMeta, TransactionTokenBalance, UiInstruction, UiLoadedAddresses,
@@ -68,24 +69,39 @@ pub struct HeliusWebsocket {
 }
 
 impl HeliusWebsocket {
-    pub fn new(
+    pub const fn new(
         api_key: String,
-        ping_interval_secs: Option<u64>,
-        pong_timeout_secs: Option<u64>,
-        transaction_idle_timeout_secs: Option<u64>,
         filters: Filters,
         account_deletions_tracked: Arc<RwLock<HashSet<Pubkey>>>,
         cluster: Cluster,
     ) -> Self {
         Self {
             api_key,
-            ping_interval_secs,
-            pong_timeout_secs,
-            transaction_idle_timeout_secs,
             filters,
             account_deletions_tracked,
             cluster,
+            ping_interval_secs: None,
+            pong_timeout_secs: None,
+            transaction_idle_timeout_secs: None,
         }
+    }
+
+    pub fn with_ping_interval_secs(mut self, ping_interval_secs: u64) -> Self {
+        self.ping_interval_secs = Some(ping_interval_secs);
+        self
+    }
+
+    pub fn with_pong_timeout_secs(mut self, pong_timeout_secs: u64) -> Self {
+        self.pong_timeout_secs = Some(pong_timeout_secs);
+        self
+    }
+
+    pub fn with_transaction_idle_timeout_secs(
+        mut self,
+        transaction_idle_timeout_secs: u64,
+    ) -> Self {
+        self.transaction_idle_timeout_secs = Some(transaction_idle_timeout_secs);
+        self
     }
 }
 
@@ -164,7 +180,7 @@ impl Datasource for HeliusWebsocket {
                     };
 
                     let (mut stream, _unsub) = match ws
-                        .account_subscribe(&solana_sdk::sysvar::clock::ID, None)
+                        .account_subscribe(&solana_program::sysvar::clock::ID, None)
                         .await
                     {
                         Ok(subscription) => subscription,
@@ -288,7 +304,7 @@ impl Datasource for HeliusWebsocket {
                                                     }
                                                 };
 
-                                                if decoded_account.lamports == 0 && decoded_account.data.is_empty() && decoded_account.owner == solana_sdk::system_program::ID {
+                                                if decoded_account.lamports == 0 && decoded_account.data.is_empty() && decoded_account.owner == solana_program::system_program::ID {
                                                     let accounts_tracked =
                                                         account_deletions_tracked.read().await;
                                                     if !accounts_tracked.is_empty() && accounts_tracked.contains(&account) {

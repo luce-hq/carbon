@@ -11,7 +11,9 @@ use {
         nonblocking::rpc_client::RpcClient, rpc_client::GetConfirmedSignaturesForAddress2Config,
         rpc_config::RpcTransactionConfig,
     },
-    solana_sdk::{commitment_config::CommitmentConfig, pubkey::Pubkey, signature::Signature},
+    solana_pubkey::Pubkey,
+    solana_sdk::commitment_config::CommitmentConfig,
+    solana_signature::Signature,
     solana_transaction_status::{
         EncodedConfirmedTransactionWithStatusMeta, UiLoadedAddresses, UiTransactionEncoding,
     },
@@ -32,7 +34,7 @@ pub struct Filters {
 }
 
 impl Filters {
-    pub fn new(
+    pub const fn new(
         accounts: Option<Vec<Pubkey>>,
         before_signature: Option<Signature>,
         until_signature: Option<Signature>,
@@ -56,7 +58,7 @@ pub struct RpcTransactionCrawler {
 }
 
 impl RpcTransactionCrawler {
-    pub fn new(
+    pub const fn new(
         rpc_url: String,
         account: Pubkey,
         batch_limit: usize,
@@ -164,7 +166,8 @@ fn signature_fetcher(
 
     tokio::spawn(async move {
         let mut last_fetched_signature = filters.before_signature;
-
+        let mut until_signature = filters.until_signature;
+        let mut most_recent_signature: Option<Signature> = None;
         loop {
             tokio::select! {
                 _ = cancellation_token.cancelled() => {
@@ -175,7 +178,7 @@ fn signature_fetcher(
                     &account,
                     GetConfirmedSignaturesForAddress2Config {
                         before: last_fetched_signature,
-                        until: filters.until_signature,
+                        until: until_signature,
                         limit: Some(batch_limit),
                         commitment: Some(commitment.unwrap_or(CommitmentConfig::confirmed())),
                     }
@@ -185,8 +188,33 @@ fn signature_fetcher(
                             let start = Instant::now();
 
                             if signatures.is_empty() {
+                                // no more signatures to fetch, so we've gone through
+                                // all transactions that have been sent up until we started polling for signatures
+                                // update `last_fetched_signature` to None so we can detect newly sent transactions
+                                last_fetched_signature = None;
+                                if most_recent_signature.is_some() {
+                                        // set the `until` signature to the most recent signature
+                                        // this will prevent reindexing old transactions
+                                        until_signature = most_recent_signature;
+                                        // set the most recent signature to None
+                                        // this will prevent reindexing old transactions
+                                        // after we run out of new
+                                        most_recent_signature = None;
+                                }
+
                                 tokio::time::sleep(polling_interval).await;
                                 continue;
+                            }
+
+                            // if we have not seen a signature, then update the most recent signature
+                            // on subsequent loop's, this will prevent us from reindexing already seen transactions
+                            if most_recent_signature.is_none() {
+                                match Signature::from_str(&signatures[0].signature) {
+                                    Ok(sig) => most_recent_signature = Some(sig),
+                                    Err(e) => {
+                                        log::error!("Invalid signature: {:?}", e);
+                                    }
+                                }
                             }
 
                             for sig_info in signatures.iter() {

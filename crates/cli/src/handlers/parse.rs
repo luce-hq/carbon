@@ -108,7 +108,7 @@ pub fn parse(path: String, output: String, as_crate: bool) -> Result<()> {
         println!("Generated {}", filename);
     }
 
-    let mut types_mod_content = types_data
+    let types_mod_content = types_data
         .iter()
         .map(|type_data| {
             format!(
@@ -119,10 +119,6 @@ pub fn parse(path: String, output: String, as_crate: bool) -> Result<()> {
         })
         .collect::<Vec<_>>()
         .join("\n");
-
-    if needs_big_array {
-        types_mod_content.push_str("\nuse serde_big_array::BigArray;\n");
-    }
 
     let types_mod_filename = format!("{}/mod.rs", types_dir);
     fs::write(&types_mod_filename, types_mod_content).expect("Failed to write types mod file");
@@ -200,7 +196,7 @@ pub fn parse(path: String, output: String, as_crate: bool) -> Result<()> {
         let cargo_toml_content = format!(
             r#"[package]
 name = "{decoder_name_kebab}-decoder"
-version = "0.6.2"
+version = "0.8.0"
 edition = {{ workspace = true }}
 
 [lib]
@@ -210,7 +206,9 @@ crate-type = ["rlib"]
 carbon-core = {{ workspace = true }}
 carbon-proc-macros = {{ workspace = true }}
 carbon-macros = {{ workspace = true }}
-solana-sdk = {{ workspace = true }}
+solana-account = {{ workspace = true }}
+solana-instruction = {{ workspace = true }}
+solana-pubkey = {{ workspace = true }}
 serde = {{ workspace = true }}
 {big_array}
 "#,
@@ -261,7 +259,7 @@ pub fn scaffold(
     fs::create_dir_all(&src_dir).expect("Failed to create src directory");
 
     // Generate Cargo.toml
-    let (carbon_deps_version, sol_deps_version) = ("0.6.2", "=2.1.15");
+    let (carbon_deps_version, sol_deps_version) = ("0.8.0", "=2.1.15");
     let datasource_dep = format!(
         "carbon-{}-datasource = \"{}\"",
         data_source.to_kebab_case(),
@@ -287,6 +285,7 @@ carbon-core = "{carbon_deps_version}"
 {datasource_dep}
 {metrics_dep}
 solana-sdk = "{sol_deps_version}"
+solana-pubkey = "{sol_deps_version}"
 solana-client = "{sol_deps_version}"
 tokio = "1.43.0"
 dotenv = "0.15.0"
@@ -307,9 +306,9 @@ log = "0.4.25"
             r#"yellowstone-grpc-client = { version = "5.0.0" }
 yellowstone-grpc-proto = { version = "5.0.0" }
             "#
-            } else {
-                ""
-            },
+        } else {
+            ""
+        },
     );
     fs::write(&cargo_toml_filename, cargo_toml_content).expect("Failed to write Cargo.toml file");
 
@@ -332,10 +331,12 @@ target/
         "helius_atlas_ws" => "HELIUS_API_KEY=your-atlas-ws-url-here",
         "rpc_block_subscribe" => "RPC_WS_URL=your-rpc-ws-url-here",
         "rpc_transaction_crawler" => "RPC_URL=your-rpc-url-here",
-        "yellowstone_grpc" => r"
+        "yellowstone_grpc" => {
+            r"
 GEYSER_URL=your-rpc-url-here
 X_TOKEN=your-x-token-here
-",
+"
+        }
         _ => "",
     };
 

@@ -2,7 +2,7 @@
 name = "carbon-rpc-block-crawler-datasource"
 description = "RPC Block Crawler Datasource"
 license = { workspace = true }
-version = "0.6.2"
+version = "0.8.0"
 edition = { workspace = true }
 readme = "README.md"
 repository = { workspace = true }
@@ -14,6 +14,7 @@ crate-type = ["rlib"]
 
 [dependencies]
 solana-client = { workspace = true }
+solana-pubkey = { workspace = true }
 solana-sdk = { workspace = true }
 solana-transaction-status = { workspace = true }
 

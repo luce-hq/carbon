@@ -4,10 +4,11 @@ use {
         account::{AccountMetadata, DecodedAccount},
         deserialize::ArrangeAccounts,
         error::CarbonResult,
-        instruction::{DecodedInstruction, InstructionMetadata, NestedInstruction},
+        instruction::{DecodedInstruction, InstructionMetadata, NestedInstructions},
         metrics::MetricsCollection,
         processor::Processor,
     },
+    carbon_log_metrics::LogMetrics,
     carbon_raydium_amm_v4_decoder::{
         accounts::RaydiumAmmV4Account,
         instructions::{
@@ -31,6 +32,11 @@ use {
 pub async fn main() -> CarbonResult<()> {
     env_logger::init();
     dotenv::dotenv().ok();
+
+    // NOTE: Workaround, that solving issue https://github.com/rustls/rustls/issues/1877
+    rustls::crypto::aws_lc_rs::default_provider()
+        .install_default()
+        .expect("Can't set crypto provider to aws_lc_rs");
 
     let mut account_filters: HashMap<String, SubscribeRequestFilterAccounts> = HashMap::new();
     account_filters.insert(
@@ -68,6 +74,8 @@ pub async fn main() -> CarbonResult<()> {
 
     carbon_core::pipeline::Pipeline::builder()
         .datasource(yellowstone_grpc)
+        .metrics(Arc::new(LogMetrics::new()))
+        .metrics_flush_interval(3)
         .instruction(RaydiumAmmV4Decoder, RaydiumAmmV4InstructionProcessor)
         .account(RaydiumAmmV4Decoder, RaydiumAmmV4AccountProcessor)
         .shutdown_strategy(carbon_core::pipeline::ShutdownStrategy::Immediate)
@@ -85,7 +93,7 @@ impl Processor for RaydiumAmmV4InstructionProcessor {
     type InputType = (
         InstructionMetadata,
         DecodedInstruction<RaydiumAmmV4Instruction>,
-        Vec<NestedInstruction>,
+        NestedInstructions,
     );
 
     async fn process(
@@ -197,10 +205,10 @@ impl Processor for RaydiumAmmV4AccountProcessor {
 
         match account.data {
             RaydiumAmmV4Account::AmmInfo(pool) => {
-                println!("\nAccount: {:#?}\nPool: {:#?}", data.0.pubkey, pool);
+                log::info!("Account: {:#?}\nPool: {:#?}", data.0.pubkey, pool);
             }
             _ => {
-                println!("\nUnnecessary Account: {:#?}", data.0.pubkey);
+                log::warn!("Unnecessary Account: {:#?}", data.0.pubkey);
             }
         };
 

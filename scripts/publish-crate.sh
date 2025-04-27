@@ -3,20 +3,25 @@
 set -ex
 
 workspace_crates=(
+    carbon-jito-protos
+    
     carbon-macros
     carbon-proc-macros
     carbon-core
     carbon-test-utils
 
     carbon-helius-atlas-ws-datasource
+    carbon-rpc-block-crawler-datasource
     carbon-rpc-block-subscribe-datasource
     carbon-rpc-program-subscribe-datasource
     carbon-rpc-transaction-crawler-datasource
+    carbon-jito-shredstream-grpc-datasource
     carbon-yellowstone-grpc-datasource
 
     carbon-log-metrics
     carbon-prometheus-metrics
 
+    carbon-associated-token-account-decoder
     carbon-drift-v2-decoder
     carbon-fluxbeam-decoder
     carbon-jupiter-dca-decoder
@@ -46,16 +51,17 @@ workspace_crates=(
     carbon-raydium-amm-v4-decoder
     carbon-raydium-clmm-decoder
     carbon-raydium-cpmm-decoder
+    carbon-raydium-launchpad-decoder
     carbon-raydium-liquidity-locking-decoder
     carbon-sharky-decoder
     carbon-solayer-restaking-program-decoder
-    carbon-spl-associated-token-account-decoder
     carbon-stabble-stable-swap-decoder
     carbon-stabble-weighted-swap-decoder
     carbon-stake-program-decoder
     carbon-system-program-decoder
     carbon-token-2022-decoder
     carbon-token-program-decoder
+    carbon-virtual-curve-decoder
     carbon-virtuals-decoder
     carbon-zeta-decoder
 )

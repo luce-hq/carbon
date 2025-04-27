@@ -1,6 +1,6 @@
 [package]
 name = "carbon-jupiter-limit-order-2-decoder"
-version = "0.6.2"
+version = "0.8.0"
 description = "Jupiter Limit Order 2 Decoder"
 license = { workspace = true }
 edition = { workspace = true }
@@ -15,4 +15,6 @@ crate-type = ["rlib"]
 [dependencies]
 carbon-core = { workspace = true }
 serde = { workspace = true }
-solana-sdk = { workspace = true }
+solana-account = { workspace = true }
+solana-instruction = { workspace = true, default-features = false }
+solana-pubkey = { workspace = true }

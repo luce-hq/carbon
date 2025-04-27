@@ -40,10 +40,11 @@ use {
         transformers,
     },
     async_trait::async_trait,
+    core::convert::TryFrom,
     serde::de::DeserializeOwned,
     solana_pubkey::Pubkey,
     solana_signature::Signature,
-    std::{convert::TryFrom, sync::Arc},
+    std::sync::Arc,
 };
 /// Contains metadata about a transaction, including its slot, signature, fee
 /// payer, transaction status metadata, the version transaction message and its
@@ -52,9 +53,12 @@ use {
 /// # Fields
 /// - `slot`: The slot number in which this transaction was processed
 /// - `signature`: The unique signature of this transaction
-/// - `fee_payer`: The public key of the fee payer account that paid for this transaction
-/// - `meta`: Transaction status metadata containing execution status, fees, balances, and other metadata
-/// - `message`: The versioned message containing the transaction instructions and account keys
+/// - `fee_payer`: The public key of the fee payer account that paid for this
+///   transaction
+/// - `meta`: Transaction status metadata containing execution status, fees,
+///   balances, and other metadata
+/// - `message`: The versioned message containing the transaction instructions
+///   and account keys
 /// - `block_time`: The Unix timestamp of when the transaction was processed.
 ///
 /// Note: The `block_time` field may not be returned in all scenarios.
@@ -68,6 +72,20 @@ pub struct TransactionMetadata {
     pub block_time: Option<i64>,
 }
 
+impl Default for TransactionMetadata {
+    fn default() -> Self {
+        Self {
+            slot: 0,
+            signature: Signature::new_unique(),
+            fee_payer: Pubkey::new_unique(),
+            meta: solana_transaction_status::TransactionStatusMeta::default(),
+            message: solana_sdk::message::VersionedMessage::Legacy(
+                solana_sdk::message::Message::default(),
+            ),
+            block_time: None,
+        }
+    }
+}
 /// Tries convert transaction update into the metadata.
 ///
 /// This function retrieves core metadata such as the transaction's slot,
@@ -114,7 +132,7 @@ impl TryFrom<crate::datasource::TransactionUpdate> for TransactionMetadata {
 /// - `U`: The output type for the matched data, if schema-matching,
 ///   implementing `DeserializeOwned`.
 pub type TransactionProcessorInputType<T, U = ()> = (
-    TransactionMetadata,
+    Arc<TransactionMetadata>,
     Vec<(InstructionMetadata, DecodedInstruction<T>)>,
     Option<U>,
 );
@@ -173,40 +191,6 @@ impl<T: InstructionDecoderCollection, U> TransactionPipe<T, U> {
         }
     }
 
-    /// Parses nested instructions into a list of `ParsedInstruction`.
-    ///
-    /// This method recursively traverses the nested instructions and parses
-    /// each one, creating a structured representation of the instructions.
-    ///
-    /// # Parameters
-    ///
-    /// - `instructions`: A slice of `NestedInstruction` representing the
-    ///   instructions to be parsed.
-    ///
-    /// # Returns
-    ///
-    /// A `Box<Vec<ParsedInstruction<T>>>` containing the parsed instructions.
-    fn parse_instructions(&self, instructions: &[NestedInstruction]) -> Vec<ParsedInstruction<T>> {
-        log::trace!(
-            "TransactionPipe::parse_instructions(instructions: {:?})",
-            instructions
-        );
-
-        let mut parsed_instructions: Vec<ParsedInstruction<T>> = vec![];
-
-        instructions.iter().for_each(|nested_instr| {
-            if let Some(parsed) = T::parse_instruction(&nested_instr.instruction) {
-                parsed_instructions.push(ParsedInstruction {
-                    program_id: nested_instr.instruction.program_id,
-                    instruction: parsed,
-                    inner_instructions: self.parse_instructions(&nested_instr.inner_instructions),
-                });
-            }
-        });
-
-        parsed_instructions
-    }
-
     /// Matches parsed instructions against the schema and returns the data as
     /// type `U`.
     ///
@@ -233,6 +217,43 @@ impl<T: InstructionDecoderCollection, U> TransactionPipe<T, U> {
     }
 }
 
+/// Parses nested instructions into a list of `ParsedInstruction`.
+///
+/// This method recursively traverses the nested instructions and parses
+/// each one, creating a structured representation of the instructions.
+///
+/// # Parameters
+///
+/// - `nested_ixs`: A slice of `NestedInstruction` representing the instructions
+///   to be parsed.
+///
+/// # Returns
+///
+/// A `Box<Vec<ParsedInstruction<T>>>` containing the parsed instructions.
+pub fn parse_instructions<T: InstructionDecoderCollection>(
+    nested_ixs: &[NestedInstruction],
+) -> Vec<ParsedInstruction<T>> {
+    log::trace!("parse_instructions(nested_ixs: {:?})", nested_ixs);
+
+    let mut parsed_instructions: Vec<ParsedInstruction<T>> = Vec::new();
+
+    for nested_ix in nested_ixs {
+        if let Some(instruction) = T::parse_instruction(&nested_ix.instruction) {
+            parsed_instructions.push(ParsedInstruction {
+                program_id: nested_ix.instruction.program_id,
+                instruction,
+                inner_instructions: parse_instructions(&nested_ix.inner_instructions),
+            });
+        } else {
+            for inner_ix in nested_ix.inner_instructions.iter() {
+                parsed_instructions.extend(parse_instructions(&[inner_ix.clone()]));
+            }
+        }
+    }
+
+    parsed_instructions
+}
+
 /// Defines an asynchronous trait for processing transactions.
 ///
 /// This trait provides a method for running transaction pipes, handling parsed
@@ -256,7 +277,7 @@ pub trait TransactionPipes<'a>: Send + Sync {
     /// A `CarbonResult<()>` indicating success or failure.
     async fn run(
         &mut self,
-        transaction_metadata: TransactionMetadata,
+        transaction_metadata: Arc<TransactionMetadata>,
         instructions: &[NestedInstruction],
         metrics: Arc<MetricsCollection>,
     ) -> CarbonResult<()>;
@@ -270,7 +291,7 @@ where
 {
     async fn run(
         &mut self,
-        transaction_metadata: TransactionMetadata,
+        transaction_metadata: Arc<TransactionMetadata>,
         instructions: &[NestedInstruction],
         metrics: Arc<MetricsCollection>,
     ) -> CarbonResult<()> {
@@ -279,7 +300,7 @@ where
             instructions,
         );
 
-        let parsed_instructions = self.parse_instructions(instructions);
+        let parsed_instructions = parse_instructions(instructions);
 
         let matched_data = self.matches_schema(&parsed_instructions);
 

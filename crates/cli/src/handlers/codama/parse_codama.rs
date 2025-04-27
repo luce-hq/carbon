@@ -95,7 +95,7 @@ pub fn parse_codama(
         println!("Generated {}", filename);
     }
 
-    let mut types_mod_content = types_data
+    let types_mod_content = types_data
         .iter()
         .map(|type_data| {
             format!(
@@ -106,10 +106,6 @@ pub fn parse_codama(
         })
         .collect::<Vec<_>>()
         .join("\n");
-
-    if needs_big_array {
-        types_mod_content.push_str("\nuse serde_big_array::BigArray;\n");
-    }
 
     let types_mod_filename = format!("{}/mod.rs", types_dir);
     fs::write(&types_mod_filename, types_mod_content).expect("Failed to write types mod file");
@@ -187,7 +183,7 @@ pub fn parse_codama(
         let cargo_toml_content = format!(
             r#"[package]
 name = "{decoder_name_kebab}-decoder"
-version = "0.6.2"
+version = "0.8.0"
 edition = {{ workspace = true }}
 
 [lib]
@@ -197,7 +193,9 @@ crate-type = ["rlib"]
 carbon-core = {{ workspace = true }}
 carbon-proc-macros = {{ workspace = true }}
 carbon-macros = {{ workspace = true }}
-solana-sdk = {{ workspace = true }}
+solana-account = {{ workspace = true }}
+solana-instruction = {{ workspace = true }}
+solana-pubkey = {{ workspace = true }}
 serde = {{ workspace = true }}
 {big_array}
 "#,
